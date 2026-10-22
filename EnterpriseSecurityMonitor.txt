@@ -1,0 +1,456 @@
+import React, { useState, useMemo } from 'react';
+
+// Helper to determine score (0 to 100) based on thresholds
+const calculateScore = (value, good, bad, inverse = false) => {
+  if (isNaN(value) || !isFinite(value)) return 0;
+  if (!inverse) {
+    if (value >= good) return 100;
+    if (value <= bad) return 0;
+    return ((value - bad) / (good - bad)) * 100;
+  } else {
+    if (value <= good) return 100;
+    if (value >= bad) return 0;
+    return ((bad - value) / (bad - good)) * 100;
+  }
+};
+
+// Helper for status badge
+const getStatus = (score) => {
+  if (score >= 70) return { label: 'Xavfsiz', color: 'bg-green-100 text-green-800 border-green-200' };
+  if (score >= 40) return { label: "E'tibor talab", color: 'bg-yellow-100 text-yellow-800 border-yellow-200' };
+  return { label: 'Xavfli', color: 'bg-red-100 text-red-800 border-red-200' };
+};
+
+const InputField = ({ label, name, value, onChange, subLabel }) => (
+  <div className="mb-3">
+    <label className="block text-sm font-medium text-slate-700 mb-1">
+      {label} {subLabel && <span className="text-xs text-slate-500 font-normal"> {subLabel}</span>}
+    </label>
+    <input
+      type={typeof value === 'number' ? 'number' : 'text'}
+      name={name}
+      value={value}
+      onChange={onChange}
+      className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-shadow"
+    />
+  </div>
+);
+
+const ProgressBar = ({ label, score, weight }) => (
+  <div className="mb-4">
+    <div className="flex justify-between text-sm mb-1">
+      <span className="font-medium text-slate-700">{label} <span className="text-slate-400 font-normal text-xs ml-1">{weight}%</span></span>
+      <span className="font-bold text-slate-800">{Math.round(score)}</span>
+    </div>
+    <div className="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
+      <div
+        className={`h-2.5 rounded-full ${score >= 70 ? 'bg-green-600' : score >= 40 ? 'bg-yellow-500' : 'bg-red-600'} transition-all duration-500`}
+        style={{ width: `${Math.max(0, Math.min(100, score))}%` }}
+      ></div>
+    </div>
+  </div>
+);
+
+export default function App() {
+  // State for form inputs (pre-filled with valid dummy data)
+  const [data, setData] = useState({
+    name: 'Namuna Tekstil MChJ',
+    year: '2025',
+    
+    // Balance
+    assetsLong: 1500,
+    assetsCurrent: 2500,
+    assetsInventory: 1000,
+    assetsReceivables: 1200,
+    assetsCash: 300,
+    
+    equity: 2200,
+    equityRetained: 800,
+    liabilitiesLong: 800,
+    liabilitiesCurrent: 1000,
+    
+    // Financial Results
+    revenue: 5000,
+    prevRevenue: 4500,
+    cogs: 3500,
+    ebit: 800,
+    netProfit: 600,
+    
+    // HR & Tech
+    empCount: 50,
+    empFired: 6,
+    fixedAssetsVal: 2000,
+    fixedAssetsDep: 900,
+    overdueReceivables: 150,
+  });
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setData(prev => ({
+      ...prev,
+      [name]: name === 'name' || name === 'year' ? value : Number(value) || 0
+    }));
+  };
+
+  const clearForm = () => {
+    const cleared = {};
+    for (let key in data) cleared[key] = typeof data[key] === 'string' ? '' : 0;
+    setData(cleared);
+  };
+
+  // --- Calculations ---
+  const calc = useMemo(() => {
+    const d = data;
+    
+    // Basic sums
+    const totalAssets = d.assetsLong + d.assetsCurrent;
+    const totalPassives = d.equity + d.liabilitiesLong + d.liabilitiesCurrent;
+    const balanceMismatch = totalAssets - totalPassives;
+    const isBalanceOk = Math.abs(balanceMismatch) < 1;
+
+    // 1. Likvidlik (Liquidity)
+    const currentRatio = d.assetsCurrent / (d.liabilitiesCurrent || 1);
+    const quickRatio = (d.assetsCurrent - d.assetsInventory) / (d.liabilitiesCurrent || 1);
+    const cashRatio = d.assetsCash / (d.liabilitiesCurrent || 1);
+    
+    const scoreCR = calculateScore(currentRatio, 1.5, 1.0);
+    const scoreQR = calculateScore(quickRatio, 1.0, 0.5);
+    const scoreCashR = calculateScore(cashRatio, 0.2, 0.05);
+    const scoreLiquidity = (scoreCR + scoreQR + scoreCashR) / 3;
+
+    // 2. Moliyaviy barqarorlik (Stability)
+    const autonomy = d.equity / (totalPassives || 1);
+    const debtToEquity = (d.liabilitiesLong + d.liabilitiesCurrent) / (d.equity || 1);
+    const workingCapitalRatio = (d.equity - d.assetsLong) / (d.assetsCurrent || 1);
+
+    const scoreAutonomy = calculateScore(autonomy, 0.5, 0.3);
+    const scoreDebtEq = calculateScore(debtToEquity, 1.0, 2.0, true);
+    const scoreWCR = calculateScore(workingCapitalRatio, 0.1, -0.1);
+    const scoreStability = (scoreAutonomy + scoreDebtEq + scoreWCR) / 3;
+
+    // 3. Rentabellik (Profitability)
+    const roa = (d.netProfit / (totalAssets || 1)) * 100;
+    const roe = (d.netProfit / (d.equity || 1)) * 100;
+    const ros = (d.ebit / (d.revenue || 1)) * 100;
+
+    const scoreROA = calculateScore(roa, 5, 0);
+    const scoreROE = calculateScore(roe, 10, 0);
+    const scoreROS = calculateScore(ros, 10, 0);
+    const scoreProfitability = (scoreROA + scoreROE + scoreROS) / 3;
+
+    // 4. Ishbilarmonlik faolligi (Activity)
+    const assetTurnover = d.revenue / (totalAssets || 1);
+    const daysReceivables = (d.assetsReceivables / (d.revenue || 1)) * 365;
+    const revenueGrowth = ((d.revenue - d.prevRevenue) / (d.prevRevenue || 1)) * 100;
+
+    const scoreAT = calculateScore(assetTurnover, 1.0, 0.5);
+    const scoreDR = calculateScore(daysReceivables, 60, 120, true);
+    const scoreRG = calculateScore(revenueGrowth, 5, 0);
+    const scoreActivity = (scoreAT + scoreDR + scoreRG) / 3;
+
+    // 5. Bankrotlik xavfi (Altman Z)
+    const x1 = (d.assetsCurrent - d.liabilitiesCurrent) / (totalAssets || 1);
+    const x2 = d.equityRetained / (totalAssets || 1);
+    const x3 = d.ebit / (totalAssets || 1);
+    const x4 = d.equity / ((d.liabilitiesLong + d.liabilitiesCurrent) || 1);
+    const altmanZ = 6.56 * x1 + 3.26 * x2 + 6.72 * x3 + 1.05 * x4;
+    const scoreAltman = calculateScore(altmanZ, 2.6, 1.1);
+
+    // 6. Kadrlar va Texnik (HR & Tech)
+    const turnoverRate = (d.empFired / (d.empCount || 1)) * 100;
+    const depreciationRate = (d.fixedAssetsDep / (d.fixedAssetsVal || 1)) * 100;
+    const badDebtRate = (d.overdueReceivables / (d.assetsReceivables || 1)) * 100;
+
+    const scoreTurnover = calculateScore(turnoverRate, 10, 20, true);
+    const scoreDep = calculateScore(depreciationRate, 40, 60, true);
+    const scoreBadDebt = calculateScore(badDebtRate, 10, 20, true);
+    const scoreHRTech = (scoreTurnover + scoreDep + scoreBadDebt) / 3;
+
+    // Integral Score
+    const integralScore = (
+      0.20 * scoreLiquidity +
+      0.25 * scoreStability +
+      0.20 * scoreProfitability +
+      0.15 * scoreActivity +
+      0.10 * scoreAltman +
+      0.10 * scoreHRTech
+    );
+
+    let integralStatus = "Inqirozli";
+    if (integralScore >= 70) integralStatus = "Barqaror (Yaxshi)";
+    else if (integralScore >= 50) integralStatus = "Qoniqarli holat";
+    else if (integralScore >= 35) integralStatus = "Inqiroz oldi";
+
+    // Metrics for Table
+    const metrics = [
+      { cat: 'Likvidlik', name: 'Joriy likvidlik koeffitsienti', value: currentRatio, norm: '≥ 1,5', score: scoreCR, fmt: v => v.toFixed(2) },
+      { name: 'Tezkor likvidlik koeffitsienti', value: quickRatio, norm: '≥ 1,0', score: scoreQR, fmt: v => v.toFixed(2) },
+      { name: 'Mutlaq likvidlik koeffitsienti', value: cashRatio, norm: '≥ 0,2', score: scoreCashR, fmt: v => v.toFixed(2) },
+      { cat: 'Moliyaviy barqarorlik', name: 'Avtonomiya (mustaqillik) koeffitsienti', value: autonomy, norm: '≥ 0,5', score: scoreAutonomy, fmt: v => v.toFixed(2) },
+      { name: "Qarz va o'z kapitali nisbati", value: debtToEquity, norm: '≤ 1,0', score: scoreDebtEq, fmt: v => v.toFixed(2) },
+      { name: "O'z aylanma mablag'lari ta'minoti", value: workingCapitalRatio, norm: '≥ 0,1', score: scoreWCR, fmt: v => v.toFixed(2) },
+      { cat: 'Rentabellik', name: 'Aktivlar rentabelligi (ROA)', value: roa, norm: '≥ 5 %', score: scoreROA, fmt: v => v.toFixed(1) + '%' },
+      { name: "O'z kapitali rentabelligi (ROE)", value: roe, norm: '≥ 10 %', score: scoreROE, fmt: v => v.toFixed(1) + '%' },
+      { name: 'Sotish rentabelligi (EBIT / tushum)', value: ros, norm: '≥ 10 %', score: scoreROS, fmt: v => v.toFixed(1) + '%' },
+      { cat: 'Ishbilarmonlik faolligi', name: 'Aktivlar aylanuvchanligi', value: assetTurnover, norm: '≥ 1,0', score: scoreAT, fmt: v => v.toFixed(2) },
+      { name: 'Debitorlik qarzining aylanish davri', value: daysReceivables, norm: '≤ 60 kun', score: scoreDR, fmt: v => Math.round(v) + ' kun' },
+      { name: "Sof tushumning o'sish sur'ati", value: revenueGrowth, norm: '≥ 5 %', score: scoreRG, fmt: v => v.toFixed(1) + '%' },
+      { cat: 'Bankrotlik xavfi', name: 'Altman Z"-hisobi', value: altmanZ, norm: '> 2,6', score: scoreAltman, fmt: v => v.toFixed(2) },
+      { cat: 'Kadrlar va texnika', name: 'Kadrlar qo‘nimsizligi koeffitsienti', value: turnoverRate, norm: '≤ 10 %', score: scoreTurnover, fmt: v => v.toFixed(1) + '%' },
+      { name: 'Asosiy vositalarning eskirish darajasi', value: depreciationRate, norm: '≤ 40 %', score: scoreDep, fmt: v => v.toFixed(1) + '%' },
+      { name: "Muddati o'tgan debitorlik ulushi", value: badDebtRate, norm: '≤ 10 %', score: scoreBadDebt, fmt: v => v.toFixed(1) + '%' },
+    ];
+
+    return {
+      totalAssets, totalPassives, balanceMismatch, isBalanceOk,
+      integralScore, integralStatus,
+      scores: {
+        liquidity: scoreLiquidity, stability: scoreStability, profitability: scoreProfitability,
+        activity: scoreActivity, altman: scoreAltman, hr: scoreHRTech
+      },
+      metrics
+    };
+  }, [data]);
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans p-4 md:p-8">
+      {/* Header */}
+      <div className="max-w-7xl mx-auto mb-6">
+        <h2 className="text-xs font-bold text-slate-500 tracking-wider uppercase mb-1">
+          Korxonaning Iqtisodiy Xavfsizligi • Amaliy Platforma
+        </h2>
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-end border-b border-slate-800 pb-4">
+          <div>
+            <h1 className="text-3xl font-extrabold text-slate-900 mb-2">Korxona xavfsizlik monitori</h1>
+            <p className="text-sm text-slate-600 max-w-2xl">
+              Korxonaning balans, moliyaviy natijalar va boshqa ko'rsatkichlarini kiriting.
+              Platforma 16 ta koeffitsientni hisoblab, iqtisodiy xavfsizlik darajasini avtomatik aniqlaydi. 
+              Summalar mln so'mda deb qabul qilinadi.
+            </p>
+          </div>
+          <div className="flex gap-2 mt-4 md:mt-0">
+            <button onClick={clearForm} className="px-4 py-2 bg-white border border-slate-300 rounded text-sm font-medium hover:bg-slate-50 transition-colors shadow-sm">
+              Tozalash
+            </button>
+            <button onClick={() => window.print()} className="px-4 py-2 bg-teal-700 text-white rounded text-sm font-medium hover:bg-teal-800 transition-colors shadow-sm">
+              Hisobotni saqlash
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        {/* LEFT COLUMN: Inputs */}
+        <div className="lg:col-span-5 space-y-6">
+          
+          {/* Umumiy malumot */}
+          <div className="bg-white p-5 rounded-lg shadow-sm border border-slate-200">
+            <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">Umumiy ma'lumot</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <InputField label="Korxona nomi" name="name" value={data.name} onChange={handleChange} />
+              <InputField label="Hisobot yili" name="year" value={data.year} onChange={handleChange} />
+            </div>
+          </div>
+
+          {/* Balans */}
+          <div className="bg-white p-5 rounded-lg shadow-sm border border-slate-200">
+            <h3 className="text-lg font-bold text-slate-800 mb-2 border-b pb-2">Buxgalteriya balansi</h3>
+            <p className="text-xs text-slate-500 mb-4">1-shakl ma'lumotlari, yil oxiriga. Aktiv jami passiv jamiga teng bo'lishi kerak.</p>
+            
+            <div className="grid grid-cols-2 gap-x-4">
+              <InputField label="Uzoq muddatli aktivlar" subLabel="(satr 130)" name="assetsLong" value={data.assetsLong} onChange={handleChange} />
+              <InputField label="Joriy aktivlar, jami" subLabel="(satr 390)" name="assetsCurrent" value={data.assetsCurrent} onChange={handleChange} />
+              
+              <div className="col-span-2 grid grid-cols-2 gap-x-4 pl-4 border-l-2 border-slate-100 mb-2">
+                <InputField label="shu jumladan: zaxiralar" name="assetsInventory" value={data.assetsInventory} onChange={handleChange} />
+                <InputField label="shu jumladan: debitorlik" name="assetsReceivables" value={data.assetsReceivables} onChange={handleChange} />
+                <InputField label="shu jumladan: pul mablag'lari" name="assetsCash" value={data.assetsCash} onChange={handleChange} />
+              </div>
+
+              <InputField label="O'z mablag'lari (kapital)" subLabel="(satr 480)" name="equity" value={data.equity} onChange={handleChange} />
+              <InputField label="shu juml: taqsimlanmagan foyda" subLabel="(satr 470)" name="equityRetained" value={data.equityRetained} onChange={handleChange} />
+              
+              <InputField label="Uzoq muddatli majburiyatlar" subLabel="(satr 490)" name="liabilitiesLong" value={data.liabilitiesLong} onChange={handleChange} />
+              <InputField label="Joriy majburiyatlar" subLabel="(satr 600)" name="liabilitiesCurrent" value={data.liabilitiesCurrent} onChange={handleChange} />
+            </div>
+
+            {!calc.isBalanceOk && (
+              <div className="mt-3 p-3 bg-red-50 text-red-700 text-sm rounded border border-red-200">
+                <strong>Diqqat!</strong> Balans mos kelmayapti: Aktivlar {calc.totalAssets}, Passivlar {calc.totalPassives} (farq: {Math.abs(calc.balanceMismatch)}). Raqamlarni tekshiring.
+              </div>
+            )}
+          </div>
+
+          {/* Moliyaviy Natijalar */}
+          <div className="bg-white p-5 rounded-lg shadow-sm border border-slate-200">
+            <h3 className="text-lg font-bold text-slate-800 mb-2 border-b pb-2">Moliyaviy natijalar</h3>
+            <p className="text-xs text-slate-500 mb-4">2-shakl ma'lumotlari, yil davomida.</p>
+            <div className="grid grid-cols-2 gap-4">
+              <InputField label="Sotishdan sof tushum" subLabel="(010)" name="revenue" value={data.revenue} onChange={handleChange} />
+              <InputField label="O'tgan yilgi sof tushum" name="prevRevenue" value={data.prevRevenue} onChange={handleChange} />
+              <InputField label="Sotilgan mahsulot tannarxi" subLabel="(020)" name="cogs" value={data.cogs} onChange={handleChange} />
+              <InputField label="Foyda (EBIT)" subLabel="(soliqqacha)" name="ebit" value={data.ebit} onChange={handleChange} />
+              <div className="col-span-2">
+                <InputField label="Hisobot davrining sof foydasi" subLabel="(270)" name="netProfit" value={data.netProfit} onChange={handleChange} />
+              </div>
+            </div>
+          </div>
+
+          {/* Kadrlar va texnika */}
+          <div className="bg-white p-5 rounded-lg shadow-sm border border-slate-200">
+            <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">Kadrlar, texnika va qarzdorlik</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <InputField label="Xodimlar o'rtacha soni" name="empCount" value={data.empCount} onChange={handleChange} />
+              <InputField label="Yil davomida bo'shaganlar" name="empFired" value={data.empFired} onChange={handleChange} />
+              <InputField label="Asosiy vositalar (bosh. qiymat)" name="fixedAssetsVal" value={data.fixedAssetsVal} onChange={handleChange} />
+              <InputField label="Asosiy vositalar eskirishi" name="fixedAssetsDep" value={data.fixedAssetsDep} onChange={handleChange} />
+              <InputField label="Muddati o'tgan debitorlik qarzi" name="overdueReceivables" value={data.overdueReceivables} onChange={handleChange} />
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT COLUMN: Outputs */}
+        <div className="lg:col-span-7 space-y-6">
+          
+          {/* Integral Baho */}
+          <div className="bg-white p-6 rounded-lg shadow-sm border-t-4 border-teal-600">
+            <div className="flex justify-between items-start mb-2">
+              <div>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">Integral Baho • {data.year}</p>
+                <h2 className="text-2xl font-bold text-slate-800 mt-1">{calc.integralStatus}</h2>
+              </div>
+              <div className="text-right">
+                <span className={`text-5xl font-extrabold ${calc.integralScore >= 70 ? 'text-green-600' : calc.integralScore >= 40 ? 'text-yellow-500' : 'text-red-600'}`}>
+                  {calc.integralScore.toFixed(1)}
+                </span>
+                <span className="text-xl text-slate-400"> / 100</span>
+              </div>
+            </div>
+            
+            <p className="text-sm text-slate-500 mb-6">
+              {calc.integralScore >= 70 ? "Korxona xavfsiz holatda. Barcha asosiy ko'rsatkichlar me'yor doirasida." :
+               calc.integralScore >= 40 ? "Bir nechta ko'rsatkich me'yordan chetga chiqqan. Profilaktik choralar ko'rilmasa, holat yomonlashishi mumkin." :
+               "Korxona iqtisodiy xavf ostida! Zudlik bilan inqirozga qarshi choralar ko'rish talab etiladi."}
+            </p>
+
+            <div className="relative pt-1">
+              <div className="flex mb-2 items-center justify-between text-xs text-slate-400 px-1">
+                <span>0 (Inqirozli)</span>
+                <span>35</span>
+                <span>50</span>
+                <span>70 (Barqaror)</span>
+                <span>100</span>
+              </div>
+              <div className="flex h-3 mb-4 overflow-hidden bg-slate-200 rounded-full">
+                {/* Visual gradient bar overlayed by a marker */}
+                <div style={{ width: '35%' }} className="bg-red-500"></div>
+                <div style={{ width: '15%' }} className="bg-orange-400"></div>
+                <div style={{ width: '20%' }} className="bg-yellow-400"></div>
+                <div style={{ width: '30%' }} className="bg-green-500"></div>
+              </div>
+              {/* Marker */}
+              <div 
+                className="absolute top-8 w-1 bg-slate-900 h-5"
+                style={{ left: `${Math.max(0, Math.min(100, calc.integralScore))}%`, transition: 'left 0.5s' }}
+              ></div>
+            </div>
+          </div>
+
+          {/* Tarkibiy qismlar */}
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-slate-200">
+            <h3 className="text-lg font-bold text-slate-800 mb-5 border-b pb-2">Tarkibiy qismlar bo'yicha</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <ProgressBar label="Likvidlik" weight="20" score={calc.scores.liquidity} />
+                <ProgressBar label="Moliyaviy barqarorlik" weight="25" score={calc.scores.stability} />
+                <ProgressBar label="Rentabellik" weight="20" score={calc.scores.profitability} />
+              </div>
+              <div>
+                <ProgressBar label="Ishbilarmonlik faolligi" weight="15" score={calc.scores.activity} />
+                <ProgressBar label="Bankrotlik xavfi" weight="10" score={calc.scores.altman} />
+                <ProgressBar label="Kadrlar va texnik" weight="10" score={calc.scores.hr} />
+              </div>
+            </div>
+          </div>
+
+          {/* Ko'rsatkichlar Table */}
+          <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+             <div className="p-5 border-b">
+               <h3 className="text-lg font-bold text-slate-800">Batafsil Ko'rsatkichlar</h3>
+             </div>
+             <div className="overflow-x-auto">
+               <table className="w-full text-sm text-left">
+                 <thead className="bg-slate-50 text-slate-500 text-xs uppercase font-semibold">
+                   <tr>
+                     <th className="px-5 py-3">Ko'rsatkich</th>
+                     <th className="px-5 py-3 text-right">Qiymat</th>
+                     <th className="px-5 py-3 text-right">Me'yor</th>
+                     <th className="px-5 py-3 text-center">Holat</th>
+                   </tr>
+                 </thead>
+                 <tbody className="divide-y divide-slate-100">
+                   {calc.metrics.map((m, idx) => {
+                     const status = getStatus(m.score);
+                     return (
+                       <React.Fragment key={idx}>
+                         {m.cat && (
+                           <tr className="bg-slate-50/50">
+                             <td colSpan="4" className="px-5 py-2 font-semibold text-teal-700 text-xs uppercase">{m.cat}</td>
+                           </tr>
+                         )}
+                         <tr className="hover:bg-slate-50 transition-colors">
+                           <td className="px-5 py-3 text-slate-700 font-medium">{m.name}</td>
+                           <td className="px-5 py-3 text-right font-mono text-slate-800">{m.fmt(m.value)}</td>
+                           <td className="px-5 py-3 text-right text-slate-500">{m.norm}</td>
+                           <td className="px-5 py-3 text-center">
+                             <span className={`inline-block px-2 py-1 text-xs rounded-full border ${status.color}`}>
+                               {status.label}
+                             </span>
+                           </td>
+                         </tr>
+                       </React.Fragment>
+                     );
+                   })}
+                 </tbody>
+               </table>
+             </div>
+          </div>
+
+          {/* Tavsiyalar */}
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-slate-200">
+            <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">Tavsiyalar</h3>
+            <div className="space-y-3">
+              {calc.metrics.filter(m => m.score < 70).length === 0 && (
+                 <p className="text-slate-500 text-sm italic">Barcha ko'rsatkichlar me'yorda. Maxsus tavsiyalar yo'q.</p>
+              )}
+              
+              {calc.metrics.map((m, idx) => {
+                if (m.score >= 70) return null; // Safe
+
+                let recommendation = "";
+                if (m.name.includes("likvidlik")) recommendation = "Pul oqimlarini boshqarishni kuchaytiring. Qisqa muddatli majburiyatlarni to'lash uchun yetarli naqd pul va tez aylanuvchi aktivlar zaxirasini shakllantiring.";
+                if (m.name.includes("Avtonomiya") || m.name.includes("Qarz va o'z kapitali")) recommendation = "Korxona qarz mablag'lariga bog'liq. Foydani qayta investitsiyalash orqali o'z kapitalini oshirish choralarini ko'ring.";
+                if (m.name.includes("Rentabellik")) recommendation = "Asosiy faoliyat marjasi past. Tannarxni pasaytirish, boshqaruv xarajatlarini qisqartirish va narx siyosatini qayta ko'rib chiqing.";
+                if (m.name.includes("aylanish davri")) recommendation = "Debitorlik qarzlarini undirishni tezlashtiring. Xaridorlar bilan ishlashda oldindan to'lov tizimini kengaytiring.";
+                if (m.name.includes("qo‘nimsizligi")) recommendation = "Xodimlar tez almashmoqda. Mehnatga haq to'lash, rag'batlantirish va ish sharoitlarini yaxshilash dasturini ishlab chiqing.";
+                if (m.name.includes("eskirish")) recommendation = "Uskunalar eskirgan. Modernizatsiya qilish va texnik bazani yangilash uchun investitsiya jalb qiling.";
+                if (m.name.includes("Muddati o'tgan")) recommendation = "Shubhali qarzlar ulushi yuqori. Muddati o'tgan qarzlar bo'yicha da'vo ishlari va undirish mexanizmlarini qat'iylashtiring.";
+
+                if(!recommendation) return null;
+
+                return (
+                  <div key={'rec_'+idx} className="p-4 bg-red-50/50 border-l-4 border-red-400 rounded-r-md">
+                    <h4 className="font-bold text-slate-800 text-sm mb-1">{m.name}: {m.fmt(m.value)} (Me'yor {m.norm})</h4>
+                    <p className="text-slate-600 text-sm leading-relaxed">{recommendation}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  );
+}
